@@ -1,4 +1,4 @@
-County,Fire Name,Start,Cont.,DPA,Total
+county,name,start,contained,DPA,acres
 MARIPOSA,RIVER,5/18/12,5/22/12,CALFIRE,320
 SAN DIEGO,BANNER 4,5/24/12,5/29/12,CAL FIRE,5320
 MERCED,BILLY,5/31/12,5/31/12,CAL FIRE,434
