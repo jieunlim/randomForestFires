@@ -33,13 +33,65 @@ for wdf in weatherDFs:
     i += 1
     sys.stdout.write(f"\r{i}/{len(weatherDFs)} years done")
     sys.stdout.flush()
+print() # newline after rewriting progress
 
 
 # get rolling average temp/precip?
 
 
-# average temp/precip by county
+# gather average temp/precip by county
 
+# create a dict mapping dates to a dict mapping i
+# counties to lists of data points
+
+defaultdictOfList = lambda : defaultdict(list)
+dateToTempDataByCounty = defaultdict(defaultdictOfList)
+dateToPrecipDataByCounty = defaultdict(defaultdictOfList)
+
+print("clustering weather data by county")
+i = 0
+
+for wdf in weatherDFs:
+    for r in wdf.itertuples():
+        if pd.notna(r.tavg):
+            dateToTempDataByCounty[r.date][r.fips].append(r.tavg)
+        if pd.notna(r.prcp):
+            dateToPrecipDataByCounty[r.date][r.fips].append(r.prcp)
+    i += 1
+    sys.stdout.write(f"\r{i}/{len(weatherDFs)} years done")
+    sys.stdout.flush()
+print() # newline after rewriting progress
+
+
+# build a df where for every date we have avg data for each county
+dates = []
+counties = []
+avgTemps = []
+avgPrecip = []
+
+print("getting avg data by county")
+i = 0
+
+for d in dateToTempDataByCounty:
+    for c in dateToTempDataByCounty[d]:
+        dates.append(d)
+        counties.append(c)
+        avgT = int(np.average(dateToTempDataByCounty[d][c]))
+        avgTemps.append(avgT)
+        avgP = np.average(dateToPrecipDataByCounty[d][c])
+        avgPrecip.append(avgP)
+    i += 1
+    sys.stdout.write(f"\r{i}/{len(dateToTempDataByCounty)} dates done")
+    sys.stdout.flush()
+print() # newline after rewriting progress
+
+countyData = np.array([counties, dates, avgTemps, avgPrecip]).transpose()
+countyDF = pd.DataFrame(data=countyData,
+                        columns=("fips", "date", "tavg", "prcp")
+                       )
+
+print(countyDF.head())
+countyDF.to_csv("countyAvgs.csv")
 
 # bucket temp by county
 
