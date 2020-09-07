@@ -27,9 +27,20 @@ if not os.path.exists(OUTPUT_FILE):
     stationToFips = stationDF['fips'].to_dict()
     fipsToCounty = stationDF[['fips', 'county']].set_index('fips').to_dict()['county']
 
+    # some stations only provide min/max temperature, we want average
+    # fill with the average of min/max, which should be a good approximation
+    print("filling in average temp where missing")
+    filledAvgs = 0
+    for wdf in weatherDFs:
+        mask = wdf['tavg'].isna()
+        wdf.loc[mask, 'tavg'] = (wdf['tmax'][mask] + wdf['tmin'][mask]) / 2
+        filledAvgs += sum(mask)
+    print(f"filled averages for {filledAvgs} rows")
+
     print("attributing counties to station")
 
     i = 0
+    droppedRows = 0
     for wdf in weatherDFs:
         stationCountyList = []
         for r in wdf.itertuples():
@@ -41,6 +52,11 @@ if not os.path.exists(OUTPUT_FILE):
         wdf['fips'] = stationCountyList
         i += 1
         sys.stdout.write(f"\r{i}/{len(weatherDFs)} years done")
+        # drop rows for which we have no fips
+        oldsize = len(wdf)
+        wdf.dropna(subset=['fips'], inplace=True)
+        droppedRows += oldsize - len(wdf)
+        sys.stdout.write(f"\t{droppedRows} rows dropped for bad location")
         sys.stdout.flush()
     print()  # newline after rewriting progress
 
@@ -103,10 +119,10 @@ if not os.path.exists(OUTPUT_FILE):
                             columns=["fips", "county", "date", "tavg", "prcp"])
     # force typing of some fields
     countyDF = countyDF.astype({'tavg': int,'prcp': float})
+    dtCols = countyDF['date'].apply(dt.datetime.fromisoformat)
+    countyDF['date'] = dtCols
     # sort by county, use stable sort to preserve date sorting
-    countyDF.sort_values('fips',
-                         kind='mergesort',
-                         inplace=True)
+    countyDF.sort_values(['fips','date'],inplace=True)
 
     # --- get a rolling average of the last N days ---
     # --- for temp/precip data by county ---
@@ -171,7 +187,6 @@ else:
 # the fire data requires a format argument to parse, but
 # the format is not a named argument so it cannot be passed
 # directly to DF.apply()
-countyDF['date'] = countyDF['date'].apply(dt.datetime.fromisoformat)
 
 fireStrToDT = lambda x: dt.datetime.strptime(x, '%m/%d/%y')
 fireCounties = set()
@@ -182,12 +197,16 @@ for fdf in fireDFs:
 
     # lowercase everything for easier string comparison
     fdf['county'] = fdf['county'].apply(str.lower)
-    fireCounties.update(fdf['county'])
+    # some fires occur in multiple counties, so the field
+    # lists all counties separated by dashes
+    fdf['county'] = fdf['county'].apply(str.split, sep='-')
 
-print(fireCounties)
-print("in fire not in counties: ")
+    for clist in fdf['county']:
+        fireCounties.update(clist)
+
+print("counties in fire data not in station data: ")
 print(fireCounties - allCounties)
-print("in counties not in fire: ")
+print("counties in station data with no fires: ")
 print(allCounties - fireCounties)
 
 # write out DF
