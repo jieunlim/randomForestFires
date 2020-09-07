@@ -1,5 +1,6 @@
 import sys
 import os
+import datetime as dt
 import pandas as pd
 import numpy as np
 from collections import defaultdict
@@ -7,6 +8,7 @@ from collections import defaultdict
 years = [2008, 2009, 2010, 2011, 2012, 2013]
 weatherDFs = []
 fireDFs = []
+OUTPUT_FILE = "countyAvgs.csv"
 
 for y in years:
     weatherDFs.append(pd.read_csv(f"cleanedData/weather{y}.csv"))
@@ -16,135 +18,177 @@ stationDF = pd.read_csv("cleanedData/geocodedStations.csv",
                         index_col=0,
                         dtype={'fips': object})  # preserve leading zero
 
-# --- get county for each station ---
-# use a dict for fast lookup
-stationToCounty = stationDF['fips'].to_dict()
+if not os.path.exists(OUTPUT_FILE):
+    # --- get county for each station ---
 
-print("attributing counties to station")
+    # lowercase everything for simpler string comparison
+    stationDF['county'] = stationDF['county'].apply(str.lower)
+    # use a dict for fast lookup
+    stationToFips = stationDF['fips'].to_dict()
+    fipsToCounty = stationDF[['fips', 'county']].set_index('fips').to_dict()['county']
 
-i = 0
-for wdf in weatherDFs:
-    stationCountyList = []
-    for r in wdf.itertuples():
-        try:
-            c = stationToCounty[r.station]
-        except KeyError:
-            c = np.NaN
-        stationCountyList.append(c)
-    wdf['fips'] = stationCountyList
-    i += 1
-    sys.stdout.write(f"\r{i}/{len(weatherDFs)} years done")
-    sys.stdout.flush()
-print()  # newline after rewriting progress
+    print("attributing counties to station")
 
-# --- gather average temp/precip by county ---
+    i = 0
+    for wdf in weatherDFs:
+        stationCountyList = []
+        for r in wdf.itertuples():
+            try:
+                f = stationToFips[r.station]
+            except KeyError:
+                f = np.NaN
+            stationCountyList.append(f)
+        wdf['fips'] = stationCountyList
+        i += 1
+        sys.stdout.write(f"\r{i}/{len(weatherDFs)} years done")
+        sys.stdout.flush()
+    print()  # newline after rewriting progress
 
-# create a dict mapping dates to dicts mapping
-# counties to lists of data points
-defaultdictOfList = lambda: defaultdict(list)
-dateToTempDataByCounty = defaultdict(defaultdictOfList)
-dateToPrecipDataByCounty = defaultdict(defaultdictOfList)
+    # --- gather average temp/precip by county ---
 
-print("clustering weather data by county")
-i = 0
+    # create a dict mapping dates to dicts mapping
+    # counties to lists of data points
+    defaultdictOfList = lambda: defaultdict(list)
+    dateToTempDataByFips = defaultdict(defaultdictOfList)
+    dateToPrecipDataByCounty = defaultdict(defaultdictOfList)
 
-for wdf in weatherDFs:
-    for r in wdf.itertuples():
-        if pd.notna(r.tavg):
-            dateToTempDataByCounty[r.date][r.fips].append(r.tavg)
-        if pd.notna(r.prcp):
-            dateToPrecipDataByCounty[r.date][r.fips].append(r.prcp)
-    i += 1
-    sys.stdout.write(f"\r{i}/{len(weatherDFs)} years done")
-    sys.stdout.flush()
-print()  # newline after rewriting progress
+    print("clustering weather data by county")
+    i = 0
 
-# build a df where for every date we have avg data for each county
-dates = []
-counties = []
-avgTemps = []
-avgPrecip = []
+    for wdf in weatherDFs:
+        for r in wdf.itertuples():
+            if pd.notna(r.tavg):
+                dateToTempDataByFips[r.date][r.fips].append(r.tavg)
+            if pd.notna(r.prcp):
+                dateToPrecipDataByCounty[r.date][r.fips].append(r.prcp)
+        i += 1
+        sys.stdout.write(f"\r{i}/{len(weatherDFs)} years done")
+        sys.stdout.flush()
+    print()  # newline after rewriting progress
 
-print("getting avg data by county")
-i = 0
-for d in dateToTempDataByCounty:
-    for c in dateToTempDataByCounty[d]:
-        dates.append(d)
-        counties.append(c)
-        avgT = int(np.average(dateToTempDataByCounty[d][c]))
-        avgTemps.append(avgT)
-        countyPrecip = dateToPrecipDataByCounty[d][c]
-        if countyPrecip:
-            avgP = np.average(countyPrecip)
-        else:
-            avgP = np.NaN
-        avgPrecip.append(avgP)
-    i += 1
-    sys.stdout.write(f"\r{i}/{len(dateToTempDataByCounty)} dates done")
-    sys.stdout.flush()
-print()  # newline after rewriting progress
+    # build a df where for every date we have avg data for each county
+    dates = []
+    fips = []
+    counties = []
+    avgTemps = []
+    avgPrecip = []
 
-# combine our lists of counties, dates, and avgs
-# transpose to produce intended shape
-countyData = np.array([counties, dates, avgTemps, avgPrecip]).transpose()
-countyDF = pd.DataFrame(data=countyData,
-                        columns=("fips", "date", "tavg", "prcp"))
-countyDF = countyDF.astype({'tavg': int})
-# sort by county, use stable sort to preserve date sorting
-countyDF.sort_values('fips',
-                     kind='mergesort',
-                     inplace=True)
+    print("getting avg data by county")
+    i = 0
+    for d in dateToTempDataByFips:
+        for f in dateToTempDataByFips[d]:
+            dates.append(d)
+            fips.append(f)
+            try:
+                counties.append(fipsToCounty[f])
+            except KeyError:
+                counties.append("UNKNOWN")
+            avgT = int(np.average(dateToTempDataByFips[d][f]))
+            avgTemps.append(avgT)
+            countyPrecip = dateToPrecipDataByCounty[d][f]
+            if countyPrecip:
+                avgP = np.average(countyPrecip)
+            else:
+                avgP = np.NaN
+            avgPrecip.append(avgP)
+        i += 1
+        sys.stdout.write(f"\r{i}/{len(dateToTempDataByFips)} dates done")
+        sys.stdout.flush()
+    print()  # newline after rewriting progress
 
-# --- get a rolling average of the last N days ---
-# --- for temp/precip data by county ---
+    # combine our lists of counties, dates, and avgs
+    # transpose to produce intended shape
+    countyData = np.array([fips, counties, dates, avgTemps, avgPrecip]).transpose()
+    countyDF = pd.DataFrame(data=countyData,
+                            columns=["fips", "county", "date", "tavg", "prcp"])
+    # force typing of some fields
+    countyDF = countyDF.astype({'tavg': int,'prcp': float})
+    # sort by county, use stable sort to preserve date sorting
+    countyDF.sort_values('fips',
+                         kind='mergesort',
+                         inplace=True)
 
-rollAvgTempWindow = 14
-rollAvgPrecipWindow = 7
-print("getting rolling averages. "
-      f"Temperature roll window: {rollAvgTempWindow}"
-      f"Precip roll window: {rollAvgPrecipWindow}")
+    # --- get a rolling average of the last N days ---
+    # --- for temp/precip data by county ---
 
-# the data is sorted by county then date
-# so the rolling average carries one county's data
-# over to the next for the window of rolling (N).
-# The first N days of a rolling avg should be NaN
-# anyway so we allow this junk data and then replace
-# with NaNs
-rollAvgTempDF = countyDF['tavg'].rolling(rollAvgTempWindow).mean()
-# find invalid dates by getting the first N dates
-invalidRollDates = list(countyDF['date'].head(rollAvgTempWindow))
-# create a mask that's true for every instance of those dates
-rollMask = countyDF['date'].isin(invalidRollDates)
-rollAvgTempDF = rollAvgTempDF.mask(rollMask)
+    rollAvgTempWindow = 14
+    rollAvgPrecipWindow = 7
+    print("getting rolling averages. "
+          f"Temperature roll window: {rollAvgTempWindow}"
+          f"Precip roll window: {rollAvgPrecipWindow}")
 
-countyDF['rtavg'] = rollAvgTempDF
+    # the data is sorted by county then date
+    # so the rolling average carries one county's data
+    # over to the next for the window of rolling (N).
+    # The first N days of a rolling avg should be NaN
+    # anyway so we allow this junk data and then replace
+    # with NaNs
+    rollAvgTempDF = countyDF['tavg'].rolling(rollAvgTempWindow).mean()
+    # find invalid dates by getting the first N dates
+    invalidRollDates = list(countyDF['date'].head(rollAvgTempWindow))
+    # create a mask that's true for every instance of those dates
+    rollMask = countyDF['date'].isin(invalidRollDates)
+    rollAvgTempDF = rollAvgTempDF.mask(rollMask)
 
-rollAvgPrecipDF = countyDF['prcp'].rolling(rollAvgPrecipWindow).mean()
-invalidRollDates = list(countyDF['date'].head(rollAvgPrecipWindow))
-rollMask = countyDF['date'].isin(invalidRollDates)
-rollAvgPrecipDF = rollAvgPrecipDF.mask(rollMask)
-recentRain = [p > 0 if pd.notna(p) else np.NaN for p in rollAvgPrecipDF]
+    countyDF['rtavg'] = rollAvgTempDF
 
-countyDF['rprcp'] = recentRain
+    rollAvgPrecipDF = countyDF['prcp'].rolling(rollAvgPrecipWindow).mean()
+    invalidRollDates = list(countyDF['date'].head(rollAvgPrecipWindow))
+    rollMask = countyDF['date'].isin(invalidRollDates)
+    rollAvgPrecipDF = rollAvgPrecipDF.mask(rollMask)
+    recentRain = [p > 0 if pd.notna(p) else np.NaN for p in rollAvgPrecipDF]
 
-# --- drop dates for which there are any temp NaNs ---
+    countyDF['rprcp'] = recentRain
 
-oldSize = len(countyDF)
-countyDF.dropna(subset=['tavg', 'rtavg'], inplace=True)
-print(f"dropped {oldSize - len(countyDF)} rows for NaN temps")
+    # --- drop dates for which there are any temp NaNs ---
 
-# --- bucket temp data ---
-bucketSize = 5
-print(f"bucketing temperature data. bucket size: {bucketSize} degrees")
+    oldSize = len(countyDF)
+    countyDF.dropna(subset=['tavg', 'rtavg'], inplace=True)
+    print(f"dropped {oldSize - len(countyDF)} rows for NaN temps")
 
-# bucket by subtracting temp % bucketSize, giving the nearest
-# int divisible by bucketSize
-countyDF['tavg'] = countyDF['tavg'].apply(lambda x: x - x % bucketSize)
-countyDF['rtavg'] = countyDF['rtavg'].apply(lambda x: x - x % bucketSize)
+    # --- bucket temp data ---
+    tempBucketSize = 5
+    precipBucketSize = 0.1
+    print("bucketing temperature and precip data."
+          f"temp bucket size: {tempBucketSize} degrees,"
+          f"precit bucket size: {precipBucketSize} inches"
+          )
 
+    # bucket by subtracting temp % bucketSize, giving the nearest
+    # int divisible by bucketSize
+    countyDF['tavg'] = countyDF['tavg'].apply(lambda x: x - x % tempBucketSize)
+    countyDF['rtavg'] = countyDF['rtavg'].apply(lambda x: x - x % tempBucketSize)
+    countyDF['prcp'] = countyDF['prcp'].apply(lambda x: x - x % precipBucketSize)
 
-# join fire info
+    countyDF.to_csv(OUTPUT_FILE, index=False)
+else:
+    countyDF = pd.read_csv(OUTPUT_FILE, dtype={'fips': object})
+    print("using cached countyAvgs.csv")
 
+# --- join fire info ---
+
+# start by converting string dates to datetime objects
+# the fire data requires a format argument to parse, but
+# the format is not a named argument so it cannot be passed
+# directly to DF.apply()
+countyDF['date'] = countyDF['date'].apply(dt.datetime.fromisoformat)
+
+fireStrToDT = lambda x: dt.datetime.strptime(x, '%m/%d/%y')
+fireCounties = set()
+allCounties = set(countyDF['county'])
+for fdf in fireDFs:
+    dtCols = fdf[['start','contained']].applymap(fireStrToDT)
+    fdf[['start','contained']] = dtCols
+
+    # lowercase everything for easier string comparison
+    fdf['county'] = fdf['county'].apply(str.lower)
+    fireCounties.update(fdf['county'])
+
+print(fireCounties)
+print("in fire not in counties: ")
+print(fireCounties - allCounties)
+print("in counties not in fire: ")
+print(allCounties - fireCounties)
 
 # write out DF
-countyDF.to_csv("countyAvgs.csv", index=False)
+countyDF.to_csv(OUTPUT_FILE, index=False)
