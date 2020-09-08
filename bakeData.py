@@ -119,6 +119,8 @@ fireWeatherDF = pd.DataFrame(data=countyData,
 fireWeatherDF = fireWeatherDF.astype({'tavg': int, 'prcp': float})
 dtCols = fireWeatherDF['date'].apply(dt.datetime.fromisoformat)
 fireWeatherDF['date'] = dtCols
+# it looks like some stations send NaN instead of zero for no precip
+fireWeatherDF['prcp'].fillna(0, inplace=True)
 # sort by county, use stable sort to preserve date sorting
 fireWeatherDF.sort_values(['fips', 'date'], inplace=True)
 
