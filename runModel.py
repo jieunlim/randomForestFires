@@ -84,5 +84,5 @@ rfcProbs = rfc.predict_proba(data)
 # only need one column, so we take the prob. of a fire
 outputDF['fireProb'] = rfcProbs.transpose()[1]
 
-outputDF.to_csv(OUTPUT_FILE)
+outputDF.to_csv(OUTPUT_FILE, index=False)
 
