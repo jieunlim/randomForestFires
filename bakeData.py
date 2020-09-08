@@ -1,5 +1,4 @@
 import sys
-import os
 import datetime as dt
 import pandas as pd
 import numpy as np
@@ -8,7 +7,7 @@ from collections import defaultdict
 years = [2008, 2009, 2010, 2011, 2012, 2013]
 weatherDFs = []
 fireDFs = []
-OUTPUT_FILE = "countyAvgs.csv"
+OUTPUT_FILE = "bakedData/fireWeatherData.csv"
 
 for y in years:
     weatherDFs.append(pd.read_csv(f"cleanedData/weather{y}.csv"))
@@ -114,20 +113,20 @@ print()  # newline after rewriting progress
 # combine our lists of counties, dates, and avgs
 # transpose to produce intended shape
 countyData = np.array([fips, counties, dates, avgTemps, avgPrecip]).transpose()
-countyDF = pd.DataFrame(data=countyData,
-                        columns=["fips", "county", "date", "tavg", "prcp"])
+fireWeatherDF = pd.DataFrame(data=countyData,
+                             columns=["fips", "county", "date", "tavg", "prcp"])
 # force typing of some fields
-countyDF = countyDF.astype({'tavg': int,'prcp': float})
-dtCols = countyDF['date'].apply(dt.datetime.fromisoformat)
-countyDF['date'] = dtCols
+fireWeatherDF = fireWeatherDF.astype({'tavg': int, 'prcp': float})
+dtCols = fireWeatherDF['date'].apply(dt.datetime.fromisoformat)
+fireWeatherDF['date'] = dtCols
 # sort by county, use stable sort to preserve date sorting
-countyDF.sort_values(['fips','date'],inplace=True)
+fireWeatherDF.sort_values(['fips', 'date'], inplace=True)
 
 # --- get a rolling average of the last N days ---
 # --- for temp/precip data by county ---
 
 rollAvgTempWindow = 14
-rollAvgPrecipWindow = 7
+rollAvgPrecipWindow = 3
 print("getting rolling averages. "
       f"Temperature roll window: {rollAvgTempWindow}"
       f"Precip roll window: {rollAvgPrecipWindow}")
@@ -138,28 +137,28 @@ print("getting rolling averages. "
 # The first N days of a rolling avg should be NaN
 # anyway so we allow this junk data and then replace
 # with NaNs
-rollAvgTempDF = countyDF['tavg'].rolling(rollAvgTempWindow).mean()
+rollAvgTempDF = fireWeatherDF['tavg'].rolling(rollAvgTempWindow).mean()
 # find invalid dates by getting the first N dates
-invalidRollDates = list(countyDF['date'].head(rollAvgTempWindow))
+invalidRollDates = list(fireWeatherDF['date'].head(rollAvgTempWindow))
 # create a mask that's true for every instance of those dates
-rollMask = countyDF['date'].isin(invalidRollDates)
+rollMask = fireWeatherDF['date'].isin(invalidRollDates)
 rollAvgTempDF = rollAvgTempDF.mask(rollMask)
 
-countyDF['rtavg'] = rollAvgTempDF
+fireWeatherDF['rtavg'] = rollAvgTempDF
 
-rollAvgPrecipDF = countyDF['prcp'].rolling(rollAvgPrecipWindow).mean()
-invalidRollDates = list(countyDF['date'].head(rollAvgPrecipWindow))
-rollMask = countyDF['date'].isin(invalidRollDates)
+rollAvgPrecipDF = fireWeatherDF['prcp'].rolling(rollAvgPrecipWindow).mean()
+invalidRollDates = list(fireWeatherDF['date'].head(rollAvgPrecipWindow))
+rollMask = fireWeatherDF['date'].isin(invalidRollDates)
 rollAvgPrecipDF = rollAvgPrecipDF.mask(rollMask)
 recentRain = [p > 0 if pd.notna(p) else np.NaN for p in rollAvgPrecipDF]
 
-countyDF['rprcp'] = recentRain
+fireWeatherDF['rprcp'] = recentRain
 
 # --- drop dates for which there are any temp NaNs ---
 
-oldSize = len(countyDF)
-countyDF.dropna(subset=['tavg', 'rtavg'], inplace=True)
-print(f"dropped {oldSize - len(countyDF)} rows for NaN temps")
+oldSize = len(fireWeatherDF)
+fireWeatherDF.dropna(subset=['tavg', 'rtavg'], inplace=True)
+print(f"dropped {oldSize - len(fireWeatherDF)} rows for NaN temps")
 
 # --- bucket temp data ---
 tempBucketSize = 5
@@ -171,13 +170,15 @@ print("bucketing temperature and precip data."
 
 # bucket by subtracting temp % bucketSize, giving the nearest
 # int divisible by bucketSize
-countyDF['tavg'] = countyDF['tavg'].apply(lambda x: x - x % tempBucketSize)
-countyDF['rtavg'] = countyDF['rtavg'].apply(lambda x: x - x % tempBucketSize)
-countyDF['prcp'] = countyDF['prcp'].apply(lambda x: x - x % precipBucketSize)
+fireWeatherDF['tavg'] = fireWeatherDF['tavg'].apply(lambda x: x - x % tempBucketSize)
+fireWeatherDF['rtavg'] = fireWeatherDF['rtavg'].apply(lambda x: x - x % tempBucketSize)
+fireWeatherDF['prcp'] = fireWeatherDF['prcp'].apply(lambda x: x - x % precipBucketSize)
 
-countyDF.to_csv(OUTPUT_FILE, index=False)
+fireWeatherDF.to_csv(OUTPUT_FILE, index=False)
 
 # --- join fire info ---
+
+print("joining fire data with weather date")
 
 # start by converting string dates to datetime objects
 # the fire data requires a format argument to parse, but
@@ -186,12 +187,13 @@ countyDF.to_csv(OUTPUT_FILE, index=False)
 fireStrToDT = lambda x: dt.datetime.strptime(x, '%m/%d/%y')
 
 # add our columns for fireStarted and activeFires
-countyDF['fireStarted'] = np.full(len(countyDF), fill_value=False)
-countyDF['activeFires'] = np.full(len(countyDF), fill_value=0)
+fireWeatherDF['fireStarted'] = np.full(len(fireWeatherDF), fill_value=False)
+fireWeatherDF['hasFire'] = np.full(len(fireWeatherDF), fill_value=False)
+fireWeatherDF['activeFires'] = np.full(len(fireWeatherDF), fill_value=0)
 
 # track what counties are/aren't in each dataset to ensure consistency
 fireCounties = set()
-allCounties = set(countyDF['county'])
+allCounties = set(fireWeatherDF['county'])
 for fdf in fireDFs:
     dtCols = fdf[['start','contained']].applymap(fireStrToDT)
     fdf[['start','contained']] = dtCols
@@ -208,16 +210,18 @@ for fdf in fireDFs:
         # again, counties is a list
         for c in row.counties:
             # note that a fire started in this county on this date
-            fireStartMask = (countyDF['county'] == c) \
-                             & (countyDF['date'] == row.start)
-            countyDF.loc[fireStartMask, 'fireStarted'] = True
+            fireStartMask = (fireWeatherDF['county'] == c) \
+                             & (fireWeatherDF['date'] == row.start)
+            fireWeatherDF.loc[fireStartMask, 'fireStarted'] = True
             # get rows where county matches and dates are between
             # the fire starting and being contained
-            activeFireMask = (countyDF['county'] == c) \
-                              & (countyDF['date'] >= row.start) \
-                              & (countyDF['date'] <= row.contained)
-            newAF = countyDF.loc[activeFireMask, 'activeFires'].apply(lambda x: x+1)
-            countyDF.loc[activeFireMask, 'activeFires'] = newAF
+            activeFireMask = (fireWeatherDF['county'] == c) \
+                              & (fireWeatherDF['date'] >= row.start) \
+                              & (fireWeatherDF['date'] <= row.contained)
+            newAF = fireWeatherDF.loc[activeFireMask, 'activeFires'].apply(lambda x: x + 1)
+            fireWeatherDF.loc[activeFireMask, 'activeFires'] = newAF
+            # we already have a mask for active fires, set hasFire to true there
+            fireWeatherDF.loc[activeFireMask, 'hasFire'] = True
 
 print("counties in fire data not in station data: ")
 print(fireCounties - allCounties)
@@ -225,6 +229,6 @@ print("counties in station data with no fires: ")
 print(allCounties - fireCounties)
 
 # write out DF
-print(countyDF.describe())
+print(fireWeatherDF.describe())
 
-countyDF.to_csv(OUTPUT_FILE, index=False)
+fireWeatherDF.to_csv(OUTPUT_FILE, index=False)
