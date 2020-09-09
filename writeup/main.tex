@@ -42,13 +42,13 @@
 
 \maketitle % Print the title
 
+\begin{figure}[h!]
+	\centering
+	\includegraphics[width=.5\linewidth]{images/animGraph_0189.jpg}
+\end{figure}
 %----------------------------------------------------------------------------------------
 %	INTRODUCTION
 %----------------------------------------------------------------------------------------
-
-\section*{Introduction} % Unnumbered section
-
-Lorem ipsum dolor sit amet, consectetur adipiscing elit. Praesent porttitor arcu luctus, imperdiet urna iaculis, mattis eros. Pellentesque iaculis odio vel nisl ullamcorper, nec faucibus ipsum molestie. Sed dictum nisl non aliquet porttitor. Etiam vulputate arcu dignissim, finibus sem et, viverra nisl. Aenean luctus congue massa, ut laoreet metus ornare in. Nunc fermentum nisi imperdiet lectus tincidunt vestibulum at ac elit. Nulla mattis nisl eu malesuada suscipit.
 
 \section{Requirements} % Numbered section
 
@@ -62,9 +62,14 @@ Running the code requires the following modules:
 	\item \lstinline|kaleido| - required for plotly to write graphs to images
 \end{itemize}
 
-
-As well as the code and data available at https://github.com/mattelser/randomForestFires. The tool \lstinline|ffmpeg| was used to combine graphs into an animation, viewable at the aforementioned github link. All work was done on a unix system and no validation was feasible on windows.  
+As well as the code and data available at https://github.com/mattelser/randomForestFires. The tool \lstinline|ffmpeg| was used to combine graphs into an animation, viewable at the aforementioned github link. All work was done on a unix system and no validation was feasible on windows. Those wishing to regenerate all baked data can do so by first running \lstinline|bakeData.py| to process all data in \lstinline|//cleanedData/|, generating \lstinline|//bakedData/fireWeatherData.csv|. Running \lstinline|runModel.py| processes this baked data and generates \lstinline|//bakedData/predictedFireData.csv|, which contains predicted probabilities of having a fire in each county on each day in our data window. To generate graphs for all these predicitons, run \lstinline|plotCounties.py|. 
 %------------------------------------------------
+
+\section*{Introduction} % Unnumbered section
+
+California wildfires occur yearly, and can quickly become catastrophic. Being able to predict when and where a wildfire may start can be extremely useful, and can save lives, homes, and livelihoods. I was interested in creating a model that could be the beginnings of such a useful tool. I chose to use a random forest model because it generally avoids overfitting, handles highly correlated features (such as cold and rain in the Bay Area) well, and I did not believe the relationships involved would necessarily be linear. Intuitively, the problem seemed like it lent itself well to a decision tree, which would mimic the way I would personally asses fire risk: It's hot today, has it been hot recently? It has, but has it rained recently? It has not, so the fire risk is likely high. The model was trained on weather data from 2008 through 2013, pairing it with all recorded "large fires" that burned at least 300 acres recorded during that time. 
+
+
 
 \section{Data Gathering}
 
@@ -81,7 +86,7 @@ Weather data is readily available from the National Climatic Data Center (NCDC) 
 The bulk of the code centers around joining, clustering, cleaning, bucketing, and extrapolating from the data. This includes all data gathering steps mentioned above, other than those explicitly mentioned as being manual (requesting weather data and extracting tables from CalFire pdfs). The data pipeline starts with these manually extracted data files, then develops them in stages, "baking" the results out in between. First, 
 \lstinline|bakeData.py| takes all the per-station-per-date observations from
 \lstinline|\cleanedData| and generates average per-county data for each date, as well as a rolling average of temperature and the recent presence of precipitation per county. Measurements are also bucketed for better usability in a random forest model. Once we have observations per county per date, we join the fire data, which begins as various fields per-fire (notably, county, start date, and date of containment). We end up with a data frame where each row is an observation of one county on a given day, including weather and how many fires are burning that day. A description of each action is printed to stdout:
-\begin{figure}[h]
+\begin{figure}[H]
 	\includegraphics[width=\linewidth]{images/bakeDataScreenshot.png}
 \end{figure}
 \\
@@ -96,6 +101,7 @@ And after reweighting, the sensitivity improves nearly tenfold. Our positive pre
 Using this model, we can generate a predicted probability of having a fire in each county for each day, given the weather data. These predicted probabilities were generated for all per-county weather observations, allowing the creation of graphs like these:
 
 \begin{figure}[h!]
+	\centering
 	\includegraphics[width=.75\linewidth]{images/animGraph_0189.jpg}
 \end{figure}
 \begin{figure}[h!]
@@ -103,12 +109,12 @@ Using this model, we can generate a predicted probability of having a fire in ea
 	\includegraphics[width=.5\linewidth]{images/animGraph_1571.jpg}
 \end{figure}
 
-Such graphs were created using \lstinline|plotly|, which can generate choropleths using the generated data and geojson described above. Each observation was given a probability and graphed, which, when combined using \lstinline|ffmpeg|, create an animation showing predicted probability of fire by county over time. This animation can be viewed at the github repository mentioned in the Requirements section, or can be generated (assuming the required data has been baked out by \lstinline|bakeData.py| then \lstinline|runModel.py|) by running \lstinline|animPlotCounties.py| then \lstinline|convertFramesToGraph.sh| .
+Such graphs were created using \lstinline|plotly|, which can generate choropleths using the generated data and geojson described above. Each observation was given a probability and graphed, which, when combined using \lstinline|ffmpeg|, create an animation showing predicted probability of fire by county over time. This animation can be viewed at the github repository mentioned in the Requirements section, or can be generated by following the steps listed in the Requirements section then \lstinline|convertFramesToGraph.sh| .
 
 %------------------------------------------------
 
 \section{Conclusion}
 
-In malesuada ullamcorper urna, sed dapibus diam sollicitudin non. Donec elit odio, accumsan ac nisl a, tempor imperdiet eros. Donec porta tortor eu risus consequat, a pharetra tortor tristique. Morbi sit amet laoreet erat. Morbi et luctus diam, quis porta ipsum. Quisque libero dolor, suscipit id facilisis eget, sodales volutpat dolor. Nullam vulputate interdum aliquam. Mauris id convallis erat, ut vehicula neque. Sed auctor nibh et elit fringilla, nec ultricies dui sollicitudin. Vestibulum vestibulum luctus metus venenatis facilisis. Suspendisse iaculis augue at vehicula ornare. Sed vel eros ut velit fermentum porttitor sed sed massa. Fusce venenatis, metus a rutrum sagittis, enim ex maximus velit, id semper nisi velit eu purus.
+With the improved weighting, the model seems to be decent at predicting when/where a fire may occur. Given the sensitivity of 0.84, the model successfully predicted 84\% of fire times and locations outside the training data set. With a positive predictive value of approximately 0.13, it would seem that a fire occurs only 13\% of the time the model states a high probability, but again given the high consequence of a wildfire and the low consequence of a false positive, this seems acceptable. This model is assuredly less sophisticated than those used by organizations performing actual fire prevention and containment, and given the size of some counties the model is not particularly precise geographically, but given relatively few inputs it is able to predict fire times and locations decently accurately. 
 
 \end{document}
