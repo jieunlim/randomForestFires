@@ -1,2 +1,2 @@
 #! /bin/bash
-ffmpeg -f image2 -framerate 12 -start_number 0988800 -i ./graphs/animFrames/120%07d.jpg animGraph.gif
+ffmpeg -f image2 -framerate 12 -i ./graphs/animFrames/animGraph_%04d.jpg animGraph.gif

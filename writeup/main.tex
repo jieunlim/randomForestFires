@@ -66,7 +66,17 @@ In hac habitasse platea dictumst. Curabitur mattis elit sit amet justo luctus ve
 
 \section{Data Gathering}
 
-Weather data is readily available from the National Climatic Data Center (NCDC) and the National Oceanic and Atmospheric Administration (NOAA), and wildfire data is made available by the California Department of Forestry and Fire Protection (CalFire), however obtaining sufficient data in a usable form still proved challenging. Raw data from NOAA (available in \lstinline{/rawData/weather}) had to be obtained through multiple manually-clicked requests, as no API existed to query and a limit on request size meant several requests had to be made per year of data. 
+Weather data is readily available from the National Climatic Data Center (NCDC) and the National Oceanic and Atmospheric Administration (NOAA), and wildfire data is made available by the California Department of Forestry and Fire Protection (CalFire), however obtaining sufficient data in a usable form still proved challenging. Raw data from NOAA
+\footnote{https://www.ncdc.noaa.gov/cdo-web/search} (available in 
+\lstinline|{/rawData/weather}|
+) had to be obtained through multiple manually-clicked requests, as no API existed to query and a limit on request size meant several requests had to be made per year of data. CalFire makes their data available via "Redbook" pdfs
+\footnote{https://www.fire.ca.gov/stats-events/}
+, from which the contents of tables was manually extracted using a tool called \lstinline|Tabula|. The fire data is only by county, while the weather data was by station, which had no county attributed. Separately, a collection of latitudes and longitudes was obtained (again from NCDC/NOAA) for each station. This allowed for obtaining county via an API made available by the Federal Communications Comission (FCC)
+\footnote{https://geo.fcc.gov/api/census/\#!/area/get\_area}
+, which accepts a latitude/longitude pair and returns geographic information. Included in this information is both county name and Federal Information Processing Standards (FIPS) code, which was one key part in graphing information by county. The second key part to graphing by county is pairing each FIPS code with a polygonal outline of that county (defined by points of latitude/longitude). This was available via an example in the documentation for the graphing module 
+\lstinline|plotly|
+\footnote{https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json} in the form of a "geojson" file defining the shape of all counties in the US. A paired-down version of this geojson file containing only California is available in 
+\lstinline|//CalCountyGeoJson.json|.
 
 \section{Code Description}
 \begin{figure}
@@ -74,6 +84,7 @@ Weather data is readily available from the National Climatic Data Center (NCDC) 
 	\label{foo bar baz}
 \end{figure}
 
+The bulk of the code centers around joining, clustering, cleaning, and extrapolating from the data. 
 Curabitur tempus hendrerit nulla. Donec faucibus lobortis nibh pharetra sagittis. Sed magna sem, posuere eget sem vitae, finibus consequat libero. Cras aliquet sagittis erat ut semper. Aenean vel enim ipsum. Fusce ut felis at eros sagittis bibendum mollis lobortis libero. Donec laoreet nisl vel risus lacinia elementum non nec lacus. Nullam luctus, nulla volutpat ultricies ultrices, quam massa placerat augue, ut fringilla urna lectus nec nibh. Vestibulum efficitur condimentum orci a semper. Pellentesque ut metus pretium lacus maximus semper. Sed tellus augue, consectetur rhoncus eleifend vel, imperdiet nec turpis. Nulla ligula ante, malesuada quis orci a, ultricies blandit elit.
 	
 %------------------------------------------------
