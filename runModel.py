@@ -75,7 +75,7 @@ print("generating predicted probabilities for all data")
 OUTPUT_FILE = "bakedData/predictedFireData.csv"
 
 # output fips, date, and predicted fire probability
-outputDF = fireWeatherData[['fips', 'date', 'hasFire']]
+outputDF = fireWeatherData[['fips', 'date', 'hasFire']].copy()
 rfcProbs = rfc.predict_proba(data)
 
 # rfcProbs is now an 2xN array. One column is probability
